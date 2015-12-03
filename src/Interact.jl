@@ -36,12 +36,12 @@ function update_view(w)
     # child packages need to override.
 end
 
-function recv_msg{T}(widget ::InputWidget{T}, value)
+function recv_msg{T}(widget::InputWidget{T}, value)
     # Hand-off received value to the signal graph
     parsed = parse_msg(widget, value)
-    println(STDERR, signal(widget))
-    push!(signal(widget), parsed)
+    println(STDERR, "recv_msg value: $value, type widg: $(typeof(widget))")
     widget.value = parsed
+    push!(signal(widget), parsed)
     if value != parsed
         update_view(widget)
     end

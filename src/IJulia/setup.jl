@@ -34,6 +34,8 @@ import Base: writemime, mimewritable
 
 const comms = Dict{Signal, Comm}()
 
+logerr(args...) = println(STDERR, args...)
+
 function get_data_dict(value, mimetypes)
     dict = Dict{ASCIIString, ByteString}()
     for m in mimetypes
@@ -102,6 +104,11 @@ end
 function writemime(io::IO, ::MIME{symbol("text/html")},
           w::InputWidget)
     create_view(w)
+    lift(wval->begin
+           logerr("sending update to widg $w statedict: $(statedict(w))")
+           send_comm(widget_comms[w], view_state(w));
+           nothing;
+         end, signal(w); init=nothing)
 end
 
 function writemime(io::IO, ::MIME{symbol("text/html")},
@@ -111,6 +118,7 @@ end
 
 function writemime{T<:Widget}(io::IO, ::MIME{symbol("text/html")},
                               x::Signal{T})
+    logerr("writemime{T<:Widget}(..., x::Signal{T}), ummm, what is x exactly: $(typeof(x))")
     create_widget_signal(x)
 end
 
@@ -158,9 +166,9 @@ view_name{T<:AbstractFloat}(::Textbox{T}) = "FloatTextView"
 view_name(::Textbox) = "TextView"
 view_name{view}(::Options{view}) = string(view, "View")
 
-function metadata{T <: Widget}(x :: Signal{T})
-    Dict()
-end
+# function metadata{T <: Widget}(x :: Signal{T})
+#     Dict()
+# end
 
 function add_ipy3_state!(state)
     for attr in ["color" "background" "width" "height" "border_color" "border_width" "border_style" "font_style" "font_weight" "font_size" "font_family" "padding" "margin" "border_radius"]
@@ -169,24 +177,34 @@ function add_ipy3_state!(state)
 end
 
 const widget_comms = Dict{Widget, Comm}()
-function update_view(w; src=w)
-    send_comm(widget_comms[w], view_state(w, src=src))
+function update_view{T<:Widget}(signal::Signal{T}; neww=signal.value)
+  oldw = prev_val[signal]
+  logerr("update view for neoldww: $neww, old widg: $oldw")
+  if typeof(neww) != typeof(oldw)
+    remove_view(oldw)
+    create_view(neww)
+  else
+    send_comm(widget_comms[oldw], view_state(oldw; src=neww))
+  end
+  prev_val[signal] = neww
+  nothing
 end
 
-function view_state(w::InputWidget; src::InputWidget=w)
+function view_state(w::InputWidget; visible=true)
     msg = Dict()
     msg["method"] = "update"
     state = Dict()
     state["msg_throttle"] = 3
-    state["_view_name"] = view_name(src)
+    state["_view_name"] = view_name(w)
     state["description"] = w.label
-    state["visible"] = true
-    state["disabled"] = false
+    state["visible"] = visible
+    state["disabled"] = !visible
     state["readout"] = true
     add_ipy3_state!(state)
-    msg["state"] = merge(state, statedict(src))
+    msg["state"] = merge(state, statedict(w))
     msg
 end
+
 
 function view_state(w::Widget; src::Widget=w)
     msg = Dict()
@@ -205,15 +223,17 @@ end
 
 function create_view(w::Widget)
     if haskey(widget_comms, w)
+        logerr("existy $w")
         comm = widget_comms[w]
     else
+        logerr("newy $w")
         comm = Comm("ipython.widget", data=merge(Dict{AbstractString, Any}([
             ("model_name", "WidgetModel"),
             ("_model_name", "WidgetModel"), # Jupyter 4.0 missing (https://github.com/ipython/ipywidgets/pull/84)
         ]), view_state(w)))
         widget_comms[w] = comm
         # Send a full state update message.
-        update_view(w) # This is redundant on 4.0 but keeps it working on Jupyter 3.0
+        send_comm(comm, view_state(w))
 
         # dispatch messages to widget's handler
         comm.on_msg = msg -> handle_msg(w, msg)
@@ -223,10 +243,20 @@ function create_view(w::Widget)
     send_comm(comm, @compat Dict("method"=>"display"))
 end
 
+function remove_view(oldw::Widget)
+  #unsubscribe_mime?
+  if haskey(widget_comms, oldw)
+    send_comm(widget_comms[oldw], view_state(oldw; visible=false))
+    delete!(widget_comms, oldw)
+  end
+end
+
+prev_val = Dict{Signal, Any}()
 function create_widget_signal(s)
     create_view(s.value)
-    local target = s.value
-    lift(x->update_view(target, src=x), s, init=nothing)
+    prev_val[s] = s.value
+    logerr("create_widget_signal, init widget: $(s.value)")
+    #lift(x->update_view(s; neww=x), s; init=nothing)
 end
 
 include("statedict.jl")

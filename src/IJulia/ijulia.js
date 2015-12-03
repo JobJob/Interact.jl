@@ -59,24 +59,24 @@
 
 	    // coordingate with Comm and redraw Signals
 	    // XXX: Test using Reactive here to improve performance
-	    $([IPython.events]).on(
-		'output_appended.OutputArea', function (event, type, value, md, toinsert) {
-		    if (md && md.reactive) {
-                // console.log(md.comm_id);
-                toinsert.addClass("signal-" + md.comm_id);
-                toinsert.data("type", type);
-                // Signal back indicating the mimetype required
-                var comm_manager = IPython.notebook.kernel.comm_manager;
-                var comm = comm_manager.comms[md.comm_id];
-                comm.then(function (c) {
-                    c.send({action: "subscribe_mime",
-                       mime: type});
-                    toinsert.bind("destroyed", function() {
-                        c.send({action: "unsubscribe_mime",
-                               mime: type});
-                    });
-                })
-		    }
+	    $([IPython.events]).on('output_appended.OutputArea',
+              function regular_signal_output_appended(event, type, value, md, toinsert) {
+                if (md && md.reactive) {
+                  // console.log(md.comm_id);
+                  toinsert.addClass("signal-" + md.comm_id);
+                  toinsert.data("type", type);
+                  // Signal back indicating the mimetype required
+                  var comm_manager = IPython.notebook.kernel.comm_manager;
+                  var comm = comm_manager.comms[md.comm_id];
+                  comm.then(function (c) {
+                      c.send({action: "subscribe_mime",
+                         mime: type});
+                      toinsert.bind("destroyed", function() {
+                          c.send({action: "unsubscribe_mime",
+                                 mime: type});
+                      });
+                  })
+                }
 	    });
 	}
 

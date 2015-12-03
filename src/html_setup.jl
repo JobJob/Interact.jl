@@ -10,6 +10,7 @@ catch
 end
 
 function writemime(io, ::MIME{symbol("text/html")}, w::InputWidget)
+    println(STDERR, "writemime html_setup???")
     wtype = typeof(w)
     while super(wtype) <: InputWidget
         wtype = super(wtype)

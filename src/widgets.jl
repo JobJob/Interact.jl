@@ -139,21 +139,20 @@ textarea(val; kwargs...) =
 ##################### SelectionWidgets ######################
 
 immutable OptionDict
-    keys::Vector
     dict::Dict
+    invdict::Dict
 end
 
 Base.getindex(x::OptionDict, y) = getindex(x.dict, y)
 Base.haskey(x::OptionDict, y) = haskey(x.dict, y)
-Base.keys(x::OptionDict) = x.keys
-Base.values(x::OptionDict) = [x.dict[k] for k in keys(x)]
+Base.keys(x::OptionDict) = keys(x.dict)
+Base.values(x::OptionDict) = values(x.dict)
 function Base.setindex!(x::OptionDict, v, k)
-    if !haskey(x.dict, k)
-        push!(x.keys, k)
-    end
     x.dict[k] = v
+    x.invdict[v] = k
     v
 end
+
 type Options{view, T} <: InputWidget{T}
     signal::Signal
     label::AbstractString
@@ -166,20 +165,27 @@ end
 
 Options(view::Symbol, options::OptionDict;
         label = "",
-        value_label=first(options.keys),
+        value_label=first(keys(options)),
         value=options[value_label],
         icons=[],
         tooltips=[],
         typ=typeof(value),
-        signal=Input(value)) =
-            Options{view, typ}(signal, label, value, value_label, options, icons, tooltips)
+        signal=Input(value)) = begin
+  opts_widg = Options{view, typ}(signal, label, value, value_label, options, icons, tooltips)
+  keep_label_updated(new_value) = begin
+    opts_widg.value_label = opts_widg.options.invdict[new_value]
+    nothing
+  end
+  Reactive.lift(keep_label_updated, opts_widg.signal; typ=Void)
+  opts_widg
+end
 
 addoption(opts, v::NTuple{2}) = opts[string(v[1])] = v[2]
 addoption(opts, v) = opts[string(v)] = v
 function Options(view::Symbol,
                     options::AbstractArray;
                     kwargs...)
-    opts = OptionDict(Any[], Dict())
+    opts = OptionDict(Dict(), Dict())
     for v in options
         addoption(opts, v)
     end
@@ -189,7 +195,7 @@ end
 function Options(view::Symbol,
                     options::Associative;
                     kwargs...)
-    opts = OptionDict(Any[], Dict())
+    opts = OptionDict(Dict(), Dict())
     for (k, v) in options
         opts[string(k)] = v
     end
